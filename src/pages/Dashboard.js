@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { db, auth } from "../firebase";
 import {
   collection,
@@ -30,28 +30,31 @@ function Dashboard({ user, isAdmin }) {
 
   const ordersRef = collection(db, "orders");
 
-  const fetchData = async () => {
+  // ✅ FIXED with useCallback
+  const fetchData = useCallback(async () => {
     const snapshot = await getDocs(ordersRef);
     const list = snapshot.docs.map((doc) => ({
       id: doc.id,
       ...doc.data(),
     }));
     setData(list);
-  };
+  }, [ordersRef]);
 
-  const fetchStaff = async () => {
+  // ✅ FIXED with useCallback
+  const fetchStaff = useCallback(async () => {
     const snapshot = await getDocs(collection(db, "staff"));
     const list = snapshot.docs.map((doc) => ({
       id: doc.id,
       ...doc.data(),
     }));
     setStaffList(list);
-  };
+  }, []);
 
+  // ✅ FIXED dependency warning
   useEffect(() => {
     fetchData();
     fetchStaff();
-  }, []);
+  }, [fetchData, fetchStaff]);
 
   const handleLogout = async () => {
     await signOut(auth);
@@ -238,7 +241,6 @@ function Dashboard({ user, isAdmin }) {
       {Object.keys(groupedData)
         .sort((a, b) => new Date(b) - new Date(a))
         .map((date) => {
-          // ✅ DAILY TOTAL ADDED HERE
           const dayTotal = groupedData[date].reduce(
             (sum, item) => sum + (parseFloat(item.amount) || 0),
             0
@@ -246,7 +248,6 @@ function Dashboard({ user, isAdmin }) {
 
           return (
             <div key={date} style={{ marginTop: "20px" }}>
-              {/* ✅ SHOW TOTAL HERE */}
               <h3>
                 📅 {date} | Total ₹ {dayTotal}
               </h3>
