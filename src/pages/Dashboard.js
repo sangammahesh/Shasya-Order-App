@@ -71,7 +71,7 @@ function Dashboard({ user, isAdmin }) {
       return;
     }
 
-    const today = new Date().toLocaleDateString();
+    const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
 
     await addDoc(ordersRef, {
       ...form,
@@ -259,7 +259,7 @@ function Dashboard({ user, isAdmin }) {
       />
 
       {Object.keys(groupedData)
-        .sort((a, b) => new Date(b) - new Date(a)) // latest date on top
+        .sort((a, b) => b.localeCompare(a)) // latest date on top
         .map((date) => {
           const dayTotal = groupedData[date].reduce(
             (sum, item) => sum + (parseFloat(item.amount) || 0),
@@ -274,60 +274,64 @@ function Dashboard({ user, isAdmin }) {
 
               <table border="1" width="100%">
                 <tbody>
-                  {groupedData[date].map((item) => (
-                    <tr key={item.id}>
-                      <td>{item.name}</td>
-                      <td>{item.mobile}</td>
-                      <td>{item.weight}</td>
-                      <td>{item.item}</td>
-                      <td>{item.address}</td>
-                      <td>{item.amount}</td>
+                  {groupedData[date]
+                    .sort(
+                      (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+                    )
+                    .map((item) => (
+                      <tr key={item.id}>
+                        <td>{item.name}</td>
+                        <td>{item.mobile}</td>
+                        <td>{item.weight}</td>
+                        <td>{item.item}</td>
+                        <td>{item.address}</td>
+                        <td>{item.amount}</td>
 
-                      <td>
-                        {staffList.find((s) => s.email === item.assignedTo)
-                          ?.name ||
-                          item.assignedTo ||
-                          "-"}
-                      </td>
+                        <td>
+                          {staffList.find((s) => s.email === item.assignedTo)
+                            ?.name ||
+                            item.assignedTo ||
+                            "-"}
+                        </td>
 
-                      <td>{item.status}</td>
-                      <td>{item.payment || "-"}</td>
-                      <td>{item.deliveredBy || "-"}</td>
-                      <td>{item.deliveredAt || "-"}</td>
+                        <td>{item.status}</td>
+                        <td>{item.payment || "-"}</td>
+                        <td>{item.deliveredBy || "-"}</td>
+                        <td>{item.deliveredAt || "-"}</td>
 
-                      <td>
-                        {!isAdmin && item.status !== "Delivered" && (
-                          <>
-                            <select
-                              value={item.payment || ""}
-                              onChange={(e) =>
-                                handlePaymentChange(item, e.target.value)
-                              }
-                            >
-                              <option value="">Payment</option>
-                              <option value="Cash">Cash</option>
-                              <option value="GPay">GPay</option>
-                            </select>
+                        <td>
+                          {!isAdmin && item.status !== "Delivered" && (
+                            <>
+                              <select
+                                value={item.payment || ""}
+                                onChange={(e) =>
+                                  handlePaymentChange(item, e.target.value)
+                                }
+                              >
+                                <option value="">Payment</option>
+                                <option value="Cash">Cash</option>
+                                <option value="GPay">GPay</option>
+                              </select>
 
-                            <button onClick={() => handleDeliver(item)}>
-                              Delivered
-                            </button>
-                          </>
-                        )}
+                              <button onClick={() => handleDeliver(item)}>
+                                Delivered
+                              </button>
+                            </>
+                          )}
 
-                        {isAdmin && (
-                          <>
-                            <button onClick={() => handleEdit(item)}>
-                              Edit
-                            </button>
-                            <button onClick={() => handleDelete(item.id)}>
-                              Delete
-                            </button>
-                          </>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                          {isAdmin && (
+                            <>
+                              <button onClick={() => handleEdit(item)}>
+                                Edit
+                              </button>
+                              <button onClick={() => handleDelete(item.id)}>
+                                Delete
+                              </button>
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
                 </tbody>
               </table>
             </div>
