@@ -30,17 +30,19 @@ function Dashboard({ user, isAdmin }) {
 
   const ordersRef = collection(db, "orders");
 
-  // ✅ FIXED with useCallback
   const fetchData = useCallback(async () => {
     const snapshot = await getDocs(ordersRef);
     const list = snapshot.docs.map((doc) => ({
       id: doc.id,
       ...doc.data(),
     }));
+
+    // ✅ SORT by createdAt DESC (latest first)
+    list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
     setData(list);
   }, [ordersRef]);
 
-  // ✅ FIXED with useCallback
   const fetchStaff = useCallback(async () => {
     const snapshot = await getDocs(collection(db, "staff"));
     const list = snapshot.docs.map((doc) => ({
@@ -50,7 +52,6 @@ function Dashboard({ user, isAdmin }) {
     setStaffList(list);
   }, []);
 
-  // ✅ FIXED dependency warning
   useEffect(() => {
     fetchData();
     fetchStaff();
@@ -79,6 +80,7 @@ function Dashboard({ user, isAdmin }) {
       deliveredAt: "",
       deliveredBy: "",
       date: today,
+      createdAt: new Date(),
       createdBy: user?.email,
     });
 
@@ -116,22 +118,41 @@ function Dashboard({ user, isAdmin }) {
     });
   };
 
+  // ✅ DELETE CONFIRMATION ADDED
   const handleDelete = async (id) => {
+    const confirmDelete = window.confirm(
+      "Are you sure you want to delete this order?"
+    );
+    if (!confirmDelete) return;
+
     await deleteDoc(doc(db, "orders", id));
     fetchData();
   };
 
-  const handleDeliver = async (item, paymentMode) => {
-    if (!paymentMode) {
-      alert("Select payment method");
+  // ✅ UPDATED DELIVERY FLOW
+  const handleDeliver = async (item) => {
+    if (!item.payment) {
+      alert("Please select payment first");
       return;
     }
 
+    const staffName =
+      staffList.find((s) => s.email === user?.email)?.name ||
+      user?.email?.split("@")[0];
+
     await updateDoc(doc(db, "orders", item.id), {
       status: "Delivered",
-      payment: paymentMode,
       deliveredAt: new Date().toLocaleString(),
-      deliveredBy: user?.email,
+      deliveredBy: staffName,
+    });
+
+    fetchData();
+  };
+
+  // ✅ Payment update only (no auto deliver)
+  const handlePaymentChange = async (item, value) => {
+    await updateDoc(doc(db, "orders", item.id), {
+      payment: value,
     });
 
     fetchData();
@@ -213,10 +234,9 @@ function Dashboard({ user, isAdmin }) {
             onChange={handleChange}
           >
             <option value="">Assign Staff</option>
-            {staffList.length === 0 && <option disabled>No staff found</option>}
             {staffList.map((staff) => (
               <option key={staff.id} value={staff.email}>
-                {staff.name || "No Name"} ({staff.email || "No Email"})
+                {staff.name} ({staff.email})
               </option>
             ))}
           </select>
@@ -239,7 +259,7 @@ function Dashboard({ user, isAdmin }) {
       />
 
       {Object.keys(groupedData)
-        .sort((a, b) => new Date(b) - new Date(a))
+        .sort((a, b) => new Date(b) - new Date(a)) // latest date on top
         .map((date) => {
           const dayTotal = groupedData[date].reduce(
             (sum, item) => sum + (parseFloat(item.amount) || 0),
@@ -253,23 +273,6 @@ function Dashboard({ user, isAdmin }) {
               </h3>
 
               <table border="1" width="100%">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Mobile</th>
-                    <th>Weight</th>
-                    <th>Item</th>
-                    <th>Address</th>
-                    <th>Amount</th>
-                    <th>Assigned To</th>
-                    <th>Status</th>
-                    <th>Payment</th>
-                    <th>Delivered By</th>
-                    <th>Delivered At</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-
                 <tbody>
                   {groupedData[date].map((item) => (
                     <tr key={item.id}>
@@ -294,15 +297,22 @@ function Dashboard({ user, isAdmin }) {
 
                       <td>
                         {!isAdmin && item.status !== "Delivered" && (
-                          <select
-                            onChange={(e) =>
-                              handleDeliver(item, e.target.value)
-                            }
-                          >
-                            <option value="">Payment</option>
-                            <option value="Cash">Cash</option>
-                            <option value="GPay">GPay</option>
-                          </select>
+                          <>
+                            <select
+                              value={item.payment || ""}
+                              onChange={(e) =>
+                                handlePaymentChange(item, e.target.value)
+                              }
+                            >
+                              <option value="">Payment</option>
+                              <option value="Cash">Cash</option>
+                              <option value="GPay">GPay</option>
+                            </select>
+
+                            <button onClick={() => handleDeliver(item)}>
+                              Delivered
+                            </button>
+                          </>
                         )}
 
                         {isAdmin && (
