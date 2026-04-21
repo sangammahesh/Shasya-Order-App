@@ -30,6 +30,23 @@ function Dashboard({ user, isAdmin }) {
 
   const ordersRef = collection(db, "orders");
 
+  // ✅ HANDLE FIRESTORE TIMESTAMP
+  const getTime = (val) => {
+    if (!val) return 0;
+    if (val.seconds) return val.seconds * 1000;
+    return new Date(val).getTime();
+  };
+
+  // ✅ FIX DATE PARSING (DD/MM/YYYY + YYYY-MM-DD)
+  const parseDate = (dateStr) => {
+    if (!dateStr) return new Date(0);
+
+    if (dateStr.includes("-")) return new Date(dateStr);
+
+    const [day, month, year] = dateStr.split("/");
+    return new Date(`${year}-${month}-${day}`);
+  };
+
   const fetchData = useCallback(async () => {
     const snapshot = await getDocs(ordersRef);
     const list = snapshot.docs.map((doc) => ({
@@ -37,11 +54,11 @@ function Dashboard({ user, isAdmin }) {
       ...doc.data(),
     }));
 
-    // ✅ SORT by createdAt DESC (latest first)
-    list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    // ✅ NEW ORDERS ON TOP
+    list.sort((a, b) => getTime(b.createdAt) - getTime(a.createdAt));
 
     setData(list);
-  }, [ordersRef]);
+  }, []);
 
   const fetchStaff = useCallback(async () => {
     const snapshot = await getDocs(collection(db, "staff"));
@@ -71,14 +88,12 @@ function Dashboard({ user, isAdmin }) {
       return;
     }
 
-    const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+    const today = new Date().toLocaleDateString("en-CA"); // always safe format
 
     await addDoc(ordersRef, {
       ...form,
       status: "Pending",
       payment: "",
-      deliveredAt: "",
-      deliveredBy: "",
       date: today,
       createdAt: new Date(),
       createdBy: user?.email,
@@ -106,58 +121,35 @@ function Dashboard({ user, isAdmin }) {
     await updateDoc(doc(db, "orders", editId), { ...form });
     setEditId(null);
     fetchData();
-
-    setForm({
-      name: "",
-      mobile: "",
-      weight: "",
-      item: "",
-      address: "",
-      amount: "",
-      assignedTo: "",
-    });
   };
 
-  // ✅ DELETE CONFIRMATION ADDED
   const handleDelete = async (id) => {
-    const confirmDelete = window.confirm(
-      "Are you sure you want to delete this order?"
-    );
-    if (!confirmDelete) return;
-
+    if (!window.confirm("Delete this order?")) return;
     await deleteDoc(doc(db, "orders", id));
     fetchData();
   };
 
-  // ✅ UPDATED DELIVERY FLOW
   const handleDeliver = async (item) => {
     if (!item.payment) {
-      alert("Please select payment first");
+      alert("Select payment first");
       return;
     }
 
-    const staffName =
-      staffList.find((s) => s.email === user?.email)?.name ||
-      user?.email?.split("@")[0];
-
     await updateDoc(doc(db, "orders", item.id), {
       status: "Delivered",
-      deliveredAt: new Date().toLocaleString(),
-      deliveredBy: staffName,
     });
 
     fetchData();
   };
 
-  // ✅ Payment update only (no auto deliver)
   const handlePaymentChange = async (item, value) => {
     await updateDoc(doc(db, "orders", item.id), {
       payment: value,
     });
-
     fetchData();
   };
 
+  // 🔍 FILTER
   let filteredData = data.filter(
     (item) =>
       item.name?.toLowerCase().includes(search.toLowerCase()) ||
@@ -172,6 +164,7 @@ function Dashboard({ user, isAdmin }) {
     );
   }
 
+  // 📅 GROUP
   const groupedData = filteredData.reduce((acc, item) => {
     const date = item.date || "No Date";
     if (!acc[date]) acc[date] = [];
@@ -179,12 +172,18 @@ function Dashboard({ user, isAdmin }) {
     return acc;
   }, {});
 
+  // ✅ DAY NAME FIXED
+  const getDayName = (dateStr) => {
+    return parseDate(dateStr).toLocaleDateString("en-IN", {
+      weekday: "long",
+    });
+  };
+
   return (
     <div style={{ padding: "10px", maxWidth: "1200px", margin: "auto" }}>
       <h2>Dashboard ({role})</h2>
 
       <p>Welcome: {user?.email}</p>
-
       <button onClick={handleLogout}>Logout</button>
 
       {isAdmin && (
@@ -236,7 +235,7 @@ function Dashboard({ user, isAdmin }) {
             <option value="">Assign Staff</option>
             {staffList.map((staff) => (
               <option key={staff.id} value={staff.email}>
-                {staff.name} ({staff.email})
+                {staff.name}
               </option>
             ))}
           </select>
@@ -259,9 +258,13 @@ function Dashboard({ user, isAdmin }) {
       />
 
       {Object.keys(groupedData)
-        .sort((a, b) => b.localeCompare(a)) // latest date on top
+        .sort((a, b) => parseDate(b) - parseDate(a)) // ✅ FIXED SORT
         .map((date) => {
-          const dayTotal = groupedData[date].reduce(
+          const items = groupedData[date].sort(
+            (a, b) => getTime(b.createdAt) - getTime(a.createdAt)
+          );
+
+          const total = items.reduce(
             (sum, item) => sum + (parseFloat(item.amount) || 0),
             0
           );
@@ -269,69 +272,62 @@ function Dashboard({ user, isAdmin }) {
           return (
             <div key={date} style={{ marginTop: "20px" }}>
               <h3>
-                📅 {date} | Total ₹ {dayTotal}
+                📅 {date} ({getDayName(date)}) | ₹ {total}
               </h3>
 
               <table border="1" width="100%">
                 <tbody>
-                  {groupedData[date]
-                    .sort(
-                      (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
-                    )
-                    .map((item) => (
-                      <tr key={item.id}>
-                        <td>{item.name}</td>
-                        <td>{item.mobile}</td>
-                        <td>{item.weight}</td>
-                        <td>{item.item}</td>
-                        <td>{item.address}</td>
-                        <td>{item.amount}</td>
+                  {items.map((item, index) => (
+                    <tr key={item.id}>
+                      <td>{index + 1}</td>
+                      <td>{item.name}</td>
+                      <td>{item.mobile}</td>
+                      <td>{item.weight}</td>
+                      <td>{item.item}</td>
+                      <td>{item.address}</td>
+                      <td>{item.amount}</td>
 
-                        <td>
-                          {staffList.find((s) => s.email === item.assignedTo)
-                            ?.name ||
-                            item.assignedTo ||
-                            "-"}
-                        </td>
+                      <td>
+                        {staffList.find((s) => s.email === item.assignedTo)
+                          ?.name || "-"}
+                      </td>
 
-                        <td>{item.status}</td>
-                        <td>{item.payment || "-"}</td>
-                        <td>{item.deliveredBy || "-"}</td>
-                        <td>{item.deliveredAt || "-"}</td>
+                      <td>{item.status}</td>
+                      <td>{item.payment || "-"}</td>
 
-                        <td>
-                          {!isAdmin && item.status !== "Delivered" && (
-                            <>
-                              <select
-                                value={item.payment || ""}
-                                onChange={(e) =>
-                                  handlePaymentChange(item, e.target.value)
-                                }
-                              >
-                                <option value="">Payment</option>
-                                <option value="Cash">Cash</option>
-                                <option value="GPay">GPay</option>
-                              </select>
+                      <td>
+                        {!isAdmin && item.status !== "Delivered" && (
+                          <>
+                            <select
+                              value={item.payment || ""}
+                              onChange={(e) =>
+                                handlePaymentChange(item, e.target.value)
+                              }
+                            >
+                              <option value="">Payment</option>
+                              <option value="Cash">Cash</option>
+                              <option value="GPay">GPay</option>
+                            </select>
 
-                              <button onClick={() => handleDeliver(item)}>
-                                Delivered
-                              </button>
-                            </>
-                          )}
+                            <button onClick={() => handleDeliver(item)}>
+                              Delivered
+                            </button>
+                          </>
+                        )}
 
-                          {isAdmin && (
-                            <>
-                              <button onClick={() => handleEdit(item)}>
-                                Edit
-                              </button>
-                              <button onClick={() => handleDelete(item.id)}>
-                                Delete
-                              </button>
-                            </>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                        {isAdmin && (
+                          <>
+                            <button onClick={() => handleEdit(item)}>
+                              Edit
+                            </button>
+                            <button onClick={() => handleDelete(item.id)}>
+                              Delete
+                            </button>
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
