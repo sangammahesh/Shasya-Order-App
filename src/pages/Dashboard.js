@@ -17,6 +17,7 @@ function Dashboard({ user, isAdmin }) {
   const [search, setSearch] = useState("");
   const [editId, setEditId] = useState(null);
   const [staffList, setStaffList] = useState([]);
+  const [stockList, setStockList] = useState([]);
 
   const [form, setForm] = useState({
     name: "",
@@ -30,19 +31,74 @@ function Dashboard({ user, isAdmin }) {
 
   const ordersRef = collection(db, "orders");
 
-  // ✅ HANDLE FIRESTORE TIMESTAMP
+  // ✅ ALL PRODUCTS
+  const products = [
+    "Wheat Sharbati",
+    "Wheat Lokwan",
+    "Multigrain",
+    "Millet",
+    "High Protein",
+    "High Fibre",
+    "Diabetes",
+    "Chana Special",
+    "Jowar Special",
+    "Bajra Special",
+    "Soybean",
+    "Ragi",
+    "Rice",
+    "Makka",
+    "Telangana Achar",
+    "Chilli Powder",
+    "Haldi Powder",
+    "Seasame Seeds",
+    "Rai",
+  ];
+
+  // ✅ RECIPES (ONLY FOR MIX PRODUCTS)
+  const recipes = {
+    Multigrain: {
+      Wheat: 0.4,
+      Bajra: 0.22,
+      Jowar: 0.18,
+      Chana: 0.1,
+      Soybean: 0.08,
+      Methi: 0.02,
+    },
+    "High Protein": {
+      Wheat: 0.5,
+      Soybean: 0.2,
+      Chana: 0.15,
+      Flaxseed: 0.15,
+    },
+    "High Fibre": {
+      Wheat: 0.4,
+      Barley: 0.2,
+      Jowar: 0.2,
+      Bajra: 0.2,
+    },
+    Diabetes: {
+      Wheat: 0.4,
+      Bajra: 0.15,
+      Jowar: 0.15,
+      Chana: 0.1,
+      Soybean: 0.1,
+      Methi: 0.05,
+      Flaxseed: 0.05,
+    },
+    Millet: {
+      Foxtail: 1,
+    },
+  };
+
   const getTime = (val) => {
     if (!val) return 0;
     if (val.seconds) return val.seconds * 1000;
     return new Date(val).getTime();
   };
 
-  // ✅ FIX DATE PARSING (DD/MM/YYYY + YYYY-MM-DD)
   const parseDate = (dateStr) => {
     if (!dateStr) return new Date(0);
-
     if (dateStr.includes("-")) return new Date(dateStr);
-
     const [day, month, year] = dateStr.split("/");
     return new Date(`${year}-${month}-${day}`);
   };
@@ -53,10 +109,7 @@ function Dashboard({ user, isAdmin }) {
       id: doc.id,
       ...doc.data(),
     }));
-
-    // ✅ NEW ORDERS ON TOP
     list.sort((a, b) => getTime(b.createdAt) - getTime(a.createdAt));
-
     setData(list);
   }, []);
 
@@ -69,10 +122,20 @@ function Dashboard({ user, isAdmin }) {
     setStaffList(list);
   }, []);
 
+  const fetchStock = useCallback(async () => {
+    const snapshot = await getDocs(collection(db, "stock"));
+    const list = snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+    setStockList(list);
+  }, []);
+
   useEffect(() => {
     fetchData();
     fetchStaff();
-  }, [fetchData, fetchStaff]);
+    fetchStock();
+  }, [fetchData, fetchStaff, fetchStock]);
 
   const handleLogout = async () => {
     await signOut(auth);
@@ -88,7 +151,7 @@ function Dashboard({ user, isAdmin }) {
       return;
     }
 
-    const today = new Date().toLocaleDateString("en-CA"); // always safe format
+    const today = new Date().toLocaleDateString("en-CA");
 
     await addDoc(ordersRef, {
       ...form,
@@ -129,10 +192,50 @@ function Dashboard({ user, isAdmin }) {
     fetchData();
   };
 
+  // ✅ FINAL STOCK SYSTEM
   const handleDeliver = async (item) => {
     if (!item.payment) {
       alert("Select payment first");
       return;
+    }
+
+    const qty = parseFloat(item.weight) || 0;
+    const recipe = recipes[item.item];
+
+    // 🔥 MIX PRODUCT
+    if (recipe) {
+      for (let material in recipe) {
+        const needed = recipe[material] * qty;
+        const stockItem = stockList.find((s) => s.item === material);
+
+        if (!stockItem || stockItem.quantity < needed) {
+          alert(`Not enough ${material}`);
+          return;
+        }
+      }
+
+      for (let material in recipe) {
+        const needed = recipe[material] * qty;
+        const stockItem = stockList.find((s) => s.item === material);
+
+        await updateDoc(doc(db, "stock", stockItem.id), {
+          quantity: stockItem.quantity - needed,
+        });
+      }
+    }
+
+    // 🔥 DIRECT PRODUCT
+    else {
+      const stockItem = stockList.find((s) => s.item === item.item);
+
+      if (!stockItem || stockItem.quantity < qty) {
+        alert(`Not enough ${item.item}`);
+        return;
+      }
+
+      await updateDoc(doc(db, "stock", stockItem.id), {
+        quantity: stockItem.quantity - qty,
+      });
     }
 
     await updateDoc(doc(db, "orders", item.id), {
@@ -140,6 +243,7 @@ function Dashboard({ user, isAdmin }) {
     });
 
     fetchData();
+    fetchStock();
   };
 
   const handlePaymentChange = async (item, value) => {
@@ -149,7 +253,6 @@ function Dashboard({ user, isAdmin }) {
     fetchData();
   };
 
-  // 🔍 FILTER
   let filteredData = data.filter(
     (item) =>
       item.name?.toLowerCase().includes(search.toLowerCase()) ||
@@ -164,7 +267,6 @@ function Dashboard({ user, isAdmin }) {
     );
   }
 
-  // 📅 GROUP
   const groupedData = filteredData.reduce((acc, item) => {
     const date = item.date || "No Date";
     if (!acc[date]) acc[date] = [];
@@ -172,12 +274,16 @@ function Dashboard({ user, isAdmin }) {
     return acc;
   }, {});
 
-  // ✅ DAY NAME FIXED
   const getDayName = (dateStr) => {
     return parseDate(dateStr).toLocaleDateString("en-IN", {
       weekday: "long",
     });
   };
+
+  const grandTotal = data.reduce(
+    (sum, item) => sum + (parseFloat(item.amount) || 0),
+    0
+  );
 
   return (
     <div style={{ padding: "10px", maxWidth: "1200px", margin: "auto" }}>
@@ -185,6 +291,8 @@ function Dashboard({ user, isAdmin }) {
 
       <p>Welcome: {user?.email}</p>
       <button onClick={handleLogout}>Logout</button>
+
+      <h2>💰 Grand Total: ₹ {grandTotal}</h2>
 
       {isAdmin && (
         <div>
@@ -208,12 +316,16 @@ function Dashboard({ user, isAdmin }) {
             onChange={handleChange}
             placeholder="Weight"
           />
-          <input
-            name="item"
-            value={form.item}
-            onChange={handleChange}
-            placeholder="Item"
-          />
+
+          <select name="item" value={form.item} onChange={handleChange}>
+            <option value="">Select Product</option>
+            {products.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
+
           <input
             name="address"
             value={form.address}
@@ -258,11 +370,9 @@ function Dashboard({ user, isAdmin }) {
       />
 
       {Object.keys(groupedData)
-        .sort((a, b) => parseDate(b) - parseDate(a)) // ✅ FIXED SORT
+        .sort((a, b) => parseDate(b) - parseDate(a))
         .map((date) => {
-          const items = groupedData[date].sort(
-            (a, b) => getTime(b.createdAt) - getTime(a.createdAt)
-          );
+          const items = groupedData[date];
 
           const total = items.reduce(
             (sum, item) => sum + (parseFloat(item.amount) || 0),
@@ -270,7 +380,7 @@ function Dashboard({ user, isAdmin }) {
           );
 
           return (
-            <div key={date} style={{ marginTop: "20px" }}>
+            <div key={date}>
               <h3>
                 📅 {date} ({getDayName(date)}) | ₹ {total}
               </h3>
@@ -286,12 +396,6 @@ function Dashboard({ user, isAdmin }) {
                       <td>{item.item}</td>
                       <td>{item.address}</td>
                       <td>{item.amount}</td>
-
-                      <td>
-                        {staffList.find((s) => s.email === item.assignedTo)
-                          ?.name || "-"}
-                      </td>
-
                       <td>{item.status}</td>
                       <td>{item.payment || "-"}</td>
 
@@ -333,6 +437,15 @@ function Dashboard({ user, isAdmin }) {
             </div>
           );
         })}
+
+      <h3 style={{ marginTop: "40px" }}>📦 Raw Material Stock</h3>
+      <ul>
+        {stockList.map((s) => (
+          <li key={s.id}>
+            {s.item} : {s.quantity} KG
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
