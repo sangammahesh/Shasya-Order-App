@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import { db, auth } from "../firebase";
 import {
   collection,
@@ -31,7 +31,7 @@ function Dashboard({ user, isAdmin }) {
 
   const ordersRef = collection(db, "orders");
 
-  // ✅ ALL PRODUCTS
+  // ✅ PRODUCTS
   const products = [
     "Wheat Sharbati",
     "Wheat Lokwan",
@@ -54,7 +54,7 @@ function Dashboard({ user, isAdmin }) {
     "Rai",
   ];
 
-  // ✅ RECIPES (ONLY FOR MIX PRODUCTS)
+  // ✅ RECIPES
   const recipes = {
     Multigrain: {
       Wheat: 0.4,
@@ -103,7 +103,8 @@ function Dashboard({ user, isAdmin }) {
     return new Date(`${year}-${month}-${day}`);
   };
 
-  const fetchData = useCallback(async () => {
+  // ✅ FETCH FUNCTIONS (NO CALLBACK = NO ERROR)
+  const fetchData = async () => {
     const snapshot = await getDocs(ordersRef);
     const list = snapshot.docs.map((doc) => ({
       id: doc.id,
@@ -111,31 +112,31 @@ function Dashboard({ user, isAdmin }) {
     }));
     list.sort((a, b) => getTime(b.createdAt) - getTime(a.createdAt));
     setData(list);
-  }, []);
+  };
 
-  const fetchStaff = useCallback(async () => {
+  const fetchStaff = async () => {
     const snapshot = await getDocs(collection(db, "staff"));
     const list = snapshot.docs.map((doc) => ({
       id: doc.id,
       ...doc.data(),
     }));
     setStaffList(list);
-  }, []);
+  };
 
-  const fetchStock = useCallback(async () => {
+  const fetchStock = async () => {
     const snapshot = await getDocs(collection(db, "stock"));
     const list = snapshot.docs.map((doc) => ({
       id: doc.id,
       ...doc.data(),
     }));
     setStockList(list);
-  }, []);
+  };
 
   useEffect(() => {
     fetchData();
     fetchStaff();
     fetchStock();
-  }, [fetchData, fetchStaff, fetchStock]);
+  }, []);
 
   const handleLogout = async () => {
     await signOut(auth);
@@ -192,7 +193,7 @@ function Dashboard({ user, isAdmin }) {
     fetchData();
   };
 
-  // ✅ FINAL STOCK SYSTEM
+  // ✅ STOCK SYSTEM
   const handleDeliver = async (item) => {
     if (!item.payment) {
       alert("Select payment first");
@@ -202,7 +203,6 @@ function Dashboard({ user, isAdmin }) {
     const qty = parseFloat(item.weight) || 0;
     const recipe = recipes[item.item];
 
-    // 🔥 MIX PRODUCT
     if (recipe) {
       for (let material in recipe) {
         const needed = recipe[material] * qty;
@@ -222,10 +222,7 @@ function Dashboard({ user, isAdmin }) {
           quantity: stockItem.quantity - needed,
         });
       }
-    }
-
-    // 🔥 DIRECT PRODUCT
-    else {
+    } else {
       const stockItem = stockList.find((s) => s.item === item.item);
 
       if (!stockItem || stockItem.quantity < qty) {
@@ -339,19 +336,6 @@ function Dashboard({ user, isAdmin }) {
             placeholder="Amount"
           />
 
-          <select
-            name="assignedTo"
-            value={form.assignedTo}
-            onChange={handleChange}
-          >
-            <option value="">Assign Staff</option>
-            {staffList.map((staff) => (
-              <option key={staff.id} value={staff.email}>
-                {staff.name}
-              </option>
-            ))}
-          </select>
-
           <br />
           <br />
 
@@ -368,75 +352,6 @@ function Dashboard({ user, isAdmin }) {
         value={search}
         onChange={(e) => setSearch(e.target.value)}
       />
-
-      {Object.keys(groupedData)
-        .sort((a, b) => parseDate(b) - parseDate(a))
-        .map((date) => {
-          const items = groupedData[date];
-
-          const total = items.reduce(
-            (sum, item) => sum + (parseFloat(item.amount) || 0),
-            0
-          );
-
-          return (
-            <div key={date}>
-              <h3>
-                📅 {date} ({getDayName(date)}) | ₹ {total}
-              </h3>
-
-              <table border="1" width="100%">
-                <tbody>
-                  {items.map((item, index) => (
-                    <tr key={item.id}>
-                      <td>{index + 1}</td>
-                      <td>{item.name}</td>
-                      <td>{item.mobile}</td>
-                      <td>{item.weight}</td>
-                      <td>{item.item}</td>
-                      <td>{item.address}</td>
-                      <td>{item.amount}</td>
-                      <td>{item.status}</td>
-                      <td>{item.payment || "-"}</td>
-
-                      <td>
-                        {!isAdmin && item.status !== "Delivered" && (
-                          <>
-                            <select
-                              value={item.payment || ""}
-                              onChange={(e) =>
-                                handlePaymentChange(item, e.target.value)
-                              }
-                            >
-                              <option value="">Payment</option>
-                              <option value="Cash">Cash</option>
-                              <option value="GPay">GPay</option>
-                            </select>
-
-                            <button onClick={() => handleDeliver(item)}>
-                              Delivered
-                            </button>
-                          </>
-                        )}
-
-                        {isAdmin && (
-                          <>
-                            <button onClick={() => handleEdit(item)}>
-                              Edit
-                            </button>
-                            <button onClick={() => handleDelete(item.id)}>
-                              Delete
-                            </button>
-                          </>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          );
-        })}
 
       <h3 style={{ marginTop: "40px" }}>📦 Raw Material Stock</h3>
       <ul>
