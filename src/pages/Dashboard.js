@@ -25,6 +25,7 @@ function Dashboard({ user, isAdmin }) {
     item: "",
     address: "",
     amount: "",
+    assignedTo: "",
   });
 
   const getTime = (val) => {
@@ -81,6 +82,7 @@ function Dashboard({ user, isAdmin }) {
       item: "",
       address: "",
       amount: "",
+      assignedTo: "",
     });
   };
 
@@ -95,7 +97,8 @@ function Dashboard({ user, isAdmin }) {
     await addDoc(collection(db, "orders"), {
       ...form,
       status: "Pending",
-      payment: "",
+      paymentMode: "",
+      paymentStatus: "Pending",
       date: today,
       createdAt: new Date(),
     });
@@ -114,6 +117,7 @@ function Dashboard({ user, isAdmin }) {
       item: item.item || "",
       address: item.address || "",
       amount: item.amount || "",
+      assignedTo: item.assignedTo || "",
     });
   };
 
@@ -132,6 +136,34 @@ function Dashboard({ user, isAdmin }) {
     fetchData();
   };
 
+  const handleDeliver = async (item) => {
+    const mode = item.paymentMode || "Later";
+
+    await updateDoc(doc(db, "orders", item.id), {
+      status: "Delivered",
+      paymentStatus: mode === "Cash" || mode === "GPay" ? "Paid" : "Pending",
+    });
+
+    fetchData();
+  };
+
+  const handlePaymentMode = async (item, mode) => {
+    await updateDoc(doc(db, "orders", item.id), {
+      paymentMode: mode,
+      paymentStatus: mode === "Cash" || mode === "GPay" ? "Paid" : "Pending",
+    });
+
+    fetchData();
+  };
+
+  const markPaid = async (item) => {
+    await updateDoc(doc(db, "orders", item.id), {
+      paymentStatus: "Paid",
+    });
+
+    fetchData();
+  };
+
   const exportToCSV = () => {
     const headers = [
       "Date",
@@ -142,7 +174,8 @@ function Dashboard({ user, isAdmin }) {
       "Address",
       "Amount",
       "Status",
-      "Payment",
+      "Payment Mode",
+      "Payment Status",
     ];
 
     const rows = data.map((item) => [
@@ -154,7 +187,8 @@ function Dashboard({ user, isAdmin }) {
       item.address || "",
       item.amount || "",
       item.status || "",
-      item.payment || "",
+      item.paymentMode || "",
+      item.paymentStatus || "",
     ]);
 
     const csv =
@@ -172,16 +206,28 @@ function Dashboard({ user, isAdmin }) {
     document.body.removeChild(link);
   };
 
-  const filteredData = data.filter(
+  let filteredData = data.filter(
     (item) =>
       item.name?.toLowerCase().includes(search.toLowerCase()) ||
       item.mobile?.includes(search)
   );
 
+  if (!isAdmin) {
+    filteredData = filteredData.filter(
+      (item) =>
+        item.status !== "Delivered" &&
+        (!item.assignedTo || item.assignedTo === user?.email)
+    );
+  }
+
   const grandTotal = data.reduce(
     (sum, item) => sum + (parseFloat(item.amount) || 0),
     0
   );
+
+  const pendingTotal = data
+    .filter((item) => item.paymentStatus === "Pending")
+    .reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
 
   return (
     <div style={{ padding: "10px", maxWidth: "1200px", margin: "auto" }}>
@@ -209,6 +255,8 @@ function Dashboard({ user, isAdmin }) {
 
       <h2>💰 Grand Total: ₹ {grandTotal}</h2>
 
+      {isAdmin && <h3>🧾 Pending Payments: ₹ {pendingTotal}</h3>}
+
       {isAdmin && (
         <div style={{ marginBottom: "20px" }}>
           <h3>{editId ? "Edit Order" : "Add Order"}</h3>
@@ -219,35 +267,30 @@ function Dashboard({ user, isAdmin }) {
             value={form.name}
             onChange={handleChange}
           />
-
           <input
             name="mobile"
             placeholder="Mobile"
             value={form.mobile}
             onChange={handleChange}
           />
-
           <input
             name="weight"
             placeholder="Weight"
             value={form.weight}
             onChange={handleChange}
           />
-
           <input
             name="item"
             placeholder="Item"
             value={form.item}
             onChange={handleChange}
           />
-
           <input
             name="address"
             placeholder="Address"
             value={form.address}
             onChange={handleChange}
           />
-
           <input
             name="amount"
             placeholder="Amount"
@@ -288,7 +331,9 @@ function Dashboard({ user, isAdmin }) {
             <th>Address</th>
             <th>Amount</th>
             <th>Status</th>
-            {isAdmin && <th>Action</th>}
+            <th>Payment Mode</th>
+            <th>Payment Status</th>
+            <th>Action</th>
           </tr>
         </thead>
 
@@ -303,19 +348,51 @@ function Dashboard({ user, isAdmin }) {
               <td>{item.address}</td>
               <td>{item.amount}</td>
               <td>{item.status}</td>
+              <td>{item.paymentMode || "-"}</td>
+              <td>{item.paymentStatus || "-"}</td>
 
-              {isAdmin && (
-                <td>
-                  <button onClick={() => handleEdit(item)}>Edit</button>
+              <td>
+                {!isAdmin && item.status !== "Delivered" && (
+                  <>
+                    <select
+                      value={item.paymentMode || ""}
+                      onChange={(e) => handlePaymentMode(item, e.target.value)}
+                    >
+                      <option value="">Select</option>
+                      <option value="Cash">Cash</option>
+                      <option value="GPay">GPay</option>
+                      <option value="Later">Later</option>
+                    </select>
 
-                  <button
-                    onClick={() => handleDelete(item.id)}
-                    style={{ marginLeft: "5px" }}
-                  >
-                    Delete
-                  </button>
-                </td>
-              )}
+                    <button onClick={() => handleDeliver(item)}>
+                      Delivered
+                    </button>
+                  </>
+                )}
+
+                {isAdmin && (
+                  <>
+                    <button onClick={() => handleEdit(item)}>Edit</button>
+
+                    <button
+                      onClick={() => handleDelete(item.id)}
+                      style={{ marginLeft: "5px" }}
+                    >
+                      Delete
+                    </button>
+
+                    {item.paymentStatus === "Pending" &&
+                      item.status === "Delivered" && (
+                        <button
+                          onClick={() => markPaid(item)}
+                          style={{ marginLeft: "5px" }}
+                        >
+                          Mark Paid
+                        </button>
+                      )}
+                  </>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>
