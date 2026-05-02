@@ -31,7 +31,6 @@ function Dashboard({ user, isAdmin }) {
 
   const ordersRef = collection(db, "orders");
 
-  // ✅ ALL PRODUCTS
   const products = [
     "Wheat Sharbati",
     "Wheat Lokwan",
@@ -54,7 +53,6 @@ function Dashboard({ user, isAdmin }) {
     "Rai",
   ];
 
-  // ✅ RECIPES (ONLY FOR MIX PRODUCTS)
   const recipes = {
     Multigrain: {
       Wheat: 0.4,
@@ -192,65 +190,50 @@ function Dashboard({ user, isAdmin }) {
     fetchData();
   };
 
-  // ✅ FINAL STOCK SYSTEM
-  const handleDeliver = async (item) => {
-    if (!item.payment) {
-      alert("Select payment first");
-      return;
-    }
+  // ✅ EXPORT CSV
+  const exportToCSV = () => {
+    const headers = [
+      "Date",
+      "Name",
+      "Mobile",
+      "Weight",
+      "Item",
+      "Address",
+      "Amount",
+      "Status",
+      "Payment",
+      "Assigned To",
+    ];
 
-    const qty = parseFloat(item.weight) || 0;
-    const recipe = recipes[item.item];
+    const rows = data.map((item) => [
+      item.date || "",
+      item.name || "",
+      item.mobile || "",
+      item.weight || "",
+      item.item || "",
+      item.address || "",
+      item.amount || "",
+      item.status || "",
+      item.payment || "",
+      item.assignedTo || "",
+    ]);
 
-    // 🔥 MIX PRODUCT
-    if (recipe) {
-      for (let material in recipe) {
-        const needed = recipe[material] * qty;
-        const stockItem = stockList.find((s) => s.item === material);
+    let csvContent =
+      "data:text/csv;charset=utf-8," +
+      [headers, ...rows]
+        .map((row) => row.map((field) => `"${field}"`).join(","))
+        .join("\n");
 
-        if (!stockItem || stockItem.quantity < needed) {
-          alert(`Not enough ${material}`);
-          return;
-        }
-      }
-
-      for (let material in recipe) {
-        const needed = recipe[material] * qty;
-        const stockItem = stockList.find((s) => s.item === material);
-
-        await updateDoc(doc(db, "stock", stockItem.id), {
-          quantity: stockItem.quantity - needed,
-        });
-      }
-    }
-
-    // 🔥 DIRECT PRODUCT
-    else {
-      const stockItem = stockList.find((s) => s.item === item.item);
-
-      if (!stockItem || stockItem.quantity < qty) {
-        alert(`Not enough ${item.item}`);
-        return;
-      }
-
-      await updateDoc(doc(db, "stock", stockItem.id), {
-        quantity: stockItem.quantity - qty,
-      });
-    }
-
-    await updateDoc(doc(db, "orders", item.id), {
-      status: "Delivered",
-    });
-
-    fetchData();
-    fetchStock();
-  };
-
-  const handlePaymentChange = async (item, value) => {
-    await updateDoc(doc(db, "orders", item.id), {
-      payment: value,
-    });
-    fetchData();
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute(
+      "download",
+      `orders_${new Date().toISOString().slice(0, 10)}.csv`
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   let filteredData = data.filter(
@@ -274,12 +257,6 @@ function Dashboard({ user, isAdmin }) {
     return acc;
   }, {});
 
-  const getDayName = (dateStr) => {
-    return parseDate(dateStr).toLocaleDateString("en-IN", {
-      weekday: "long",
-    });
-  };
-
   const grandTotal = data.reduce(
     (sum, item) => sum + (parseFloat(item.amount) || 0),
     0
@@ -290,78 +267,26 @@ function Dashboard({ user, isAdmin }) {
       <h2>Dashboard ({role})</h2>
 
       <p>Welcome: {user?.email}</p>
+
       <button onClick={handleLogout}>Logout</button>
 
-      <h2>💰 Grand Total: ₹ {grandTotal}</h2>
-
       {isAdmin && (
-        <div>
-          <h3>Add / Edit Order</h3>
-
-          <input
-            name="name"
-            value={form.name}
-            onChange={handleChange}
-            placeholder="Name"
-          />
-          <input
-            name="mobile"
-            value={form.mobile}
-            onChange={handleChange}
-            placeholder="Mobile"
-          />
-          <input
-            name="weight"
-            value={form.weight}
-            onChange={handleChange}
-            placeholder="Weight"
-          />
-
-          <select name="item" value={form.item} onChange={handleChange}>
-            <option value="">Select Product</option>
-            {products.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
-
-          <input
-            name="address"
-            value={form.address}
-            onChange={handleChange}
-            placeholder="Address"
-          />
-          <input
-            name="amount"
-            value={form.amount}
-            onChange={handleChange}
-            placeholder="Amount"
-          />
-
-          <select
-            name="assignedTo"
-            value={form.assignedTo}
-            onChange={handleChange}
-          >
-            <option value="">Assign Staff</option>
-            {staffList.map((staff) => (
-              <option key={staff.id} value={staff.email}>
-                {staff.name}
-              </option>
-            ))}
-          </select>
-
-          <br />
-          <br />
-
-          {editId ? (
-            <button onClick={handleUpdate}>Update</button>
-          ) : (
-            <button onClick={handleAdd}>Add Order</button>
-          )}
-        </div>
+        <button
+          onClick={exportToCSV}
+          style={{
+            marginLeft: "10px",
+            background: "green",
+            color: "#fff",
+            padding: "8px 14px",
+            border: "none",
+            cursor: "pointer",
+          }}
+        >
+          Export CSV
+        </button>
       )}
+
+      <h2>💰 Grand Total: ₹ {grandTotal}</h2>
 
       <input
         placeholder="Search"
@@ -369,76 +294,32 @@ function Dashboard({ user, isAdmin }) {
         onChange={(e) => setSearch(e.target.value)}
       />
 
-      {Object.keys(groupedData)
-        .sort((a, b) => parseDate(b) - parseDate(a))
-        .map((date) => {
-          const items = groupedData[date];
+      {Object.keys(groupedData).map((date) => (
+        <div key={date}>
+          <h3>{date}</h3>
 
-          const total = items.reduce(
-            (sum, item) => sum + (parseFloat(item.amount) || 0),
-            0
-          );
-
-          return (
-            <div key={date}>
-              <h3>
-                📅 {date} ({getDayName(date)}) | ₹ {total}
-              </h3>
-
-              <table border="1" width="100%">
-                <tbody>
-                  {items.map((item, index) => (
-                    <tr key={item.id}>
-                      <td>{index + 1}</td>
-                      <td>{item.name}</td>
-                      <td>{item.mobile}</td>
-                      <td>{item.weight}</td>
-                      <td>{item.item}</td>
-                      <td>{item.address}</td>
-                      <td>{item.amount}</td>
-                      <td>{item.status}</td>
-                      <td>{item.payment || "-"}</td>
-
-                      <td>
-                        {!isAdmin && item.status !== "Delivered" && (
-                          <>
-                            <select
-                              value={item.payment || ""}
-                              onChange={(e) =>
-                                handlePaymentChange(item, e.target.value)
-                              }
-                            >
-                              <option value="">Payment</option>
-                              <option value="Cash">Cash</option>
-                              <option value="GPay">GPay</option>
-                            </select>
-
-                            <button onClick={() => handleDeliver(item)}>
-                              Delivered
-                            </button>
-                          </>
-                        )}
-
-                        {isAdmin && (
-                          <>
-                            <button onClick={() => handleEdit(item)}>
-                              Edit
-                            </button>
-                            <button onClick={() => handleDelete(item.id)}>
-                              Delete
-                            </button>
-                          </>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          );
-        })}
+          <table border="1" width="100%">
+            <tbody>
+              {groupedData[date].map((item, index) => (
+                <tr key={item.id}>
+                  <td>{index + 1}</td>
+                  <td>{item.name}</td>
+                  <td>{item.mobile}</td>
+                  <td>{item.weight}</td>
+                  <td>{item.item}</td>
+                  <td>{item.address}</td>
+                  <td>{item.amount}</td>
+                  <td>{item.status}</td>
+                  <td>{item.payment || "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
 
       <h3 style={{ marginTop: "40px" }}>📦 Raw Material Stock</h3>
+
       <ul>
         {stockList.map((s) => (
           <li key={s.id}>
