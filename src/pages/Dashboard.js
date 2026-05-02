@@ -60,8 +60,11 @@ function Dashboard({ user, isAdmin }) {
 
   useEffect(() => {
     fetchData();
-    fetchStock();
-  }, [fetchData, fetchStock]);
+
+    if (isAdmin) {
+      fetchStock();
+    }
+  }, [fetchData, fetchStock, isAdmin]);
 
   const handleLogout = async () => {
     await signOut(auth);
@@ -136,17 +139,6 @@ function Dashboard({ user, isAdmin }) {
     fetchData();
   };
 
-  const handleDeliver = async (item) => {
-    const mode = item.paymentMode || "Later";
-
-    await updateDoc(doc(db, "orders", item.id), {
-      status: "Delivered",
-      paymentStatus: mode === "Cash" || mode === "GPay" ? "Paid" : "Pending",
-    });
-
-    fetchData();
-  };
-
   const handlePaymentMode = async (item, mode) => {
     await updateDoc(doc(db, "orders", item.id), {
       paymentMode: mode,
@@ -154,6 +146,18 @@ function Dashboard({ user, isAdmin }) {
     });
 
     fetchData();
+  };
+
+  const handleDeliver = async (item) => {
+    const mode = item.paymentMode || "Later";
+
+    await updateDoc(doc(db, "orders", item.id), {
+      status: "Delivered",
+      paymentMode: mode,
+      paymentStatus: mode === "Cash" || mode === "GPay" ? "Paid" : "Pending",
+    });
+
+    await fetchData(); // instant remove from staff page
   };
 
   const markPaid = async (item) => {
@@ -226,7 +230,9 @@ function Dashboard({ user, isAdmin }) {
   );
 
   const pendingTotal = data
-    .filter((item) => item.paymentStatus === "Pending")
+    .filter(
+      (item) => item.status === "Delivered" && item.paymentStatus === "Pending"
+    )
     .reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
 
   return (
@@ -253,7 +259,7 @@ function Dashboard({ user, isAdmin }) {
         </button>
       )}
 
-      <h2>💰 Grand Total: ₹ {grandTotal}</h2>
+      {isAdmin && <h2>💰 Grand Total: ₹ {grandTotal}</h2>}
 
       {isAdmin && <h3>🧾 Pending Payments: ₹ {pendingTotal}</h3>}
 
@@ -295,6 +301,12 @@ function Dashboard({ user, isAdmin }) {
             name="amount"
             placeholder="Amount"
             value={form.amount}
+            onChange={handleChange}
+          />
+          <input
+            name="assignedTo"
+            placeholder="Assign Staff Email"
+            value={form.assignedTo}
             onChange={handleChange}
           />
 
@@ -364,7 +376,10 @@ function Dashboard({ user, isAdmin }) {
                       <option value="Later">Later</option>
                     </select>
 
-                    <button onClick={() => handleDeliver(item)}>
+                    <button
+                      onClick={() => handleDeliver(item)}
+                      style={{ marginLeft: "5px" }}
+                    >
                       Delivered
                     </button>
                   </>
@@ -381,8 +396,8 @@ function Dashboard({ user, isAdmin }) {
                       Delete
                     </button>
 
-                    {item.paymentStatus === "Pending" &&
-                      item.status === "Delivered" && (
+                    {item.status === "Delivered" &&
+                      item.paymentStatus === "Pending" && (
                         <button
                           onClick={() => markPaid(item)}
                           style={{ marginLeft: "5px" }}
@@ -398,15 +413,19 @@ function Dashboard({ user, isAdmin }) {
         </tbody>
       </table>
 
-      <h3 style={{ marginTop: "40px" }}>📦 Raw Material Stock</h3>
+      {isAdmin && (
+        <>
+          <h3 style={{ marginTop: "40px" }}>📦 Raw Material Stock</h3>
 
-      <ul>
-        {stockList.map((item) => (
-          <li key={item.id}>
-            {item.item} : {item.quantity} KG
-          </li>
-        ))}
-      </ul>
+          <ul>
+            {stockList.map((item) => (
+              <li key={item.id}>
+                {item.item} : {item.quantity} KG
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </div>
   );
 }
