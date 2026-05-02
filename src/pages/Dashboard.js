@@ -139,17 +139,27 @@ function Dashboard({ user, isAdmin }) {
     fetchData();
   };
 
-  const handlePaymentMode = async (item, mode) => {
-    await updateDoc(doc(db, "orders", item.id), {
-      paymentMode: mode,
-      paymentStatus: mode === "Cash" || mode === "GPay" ? "Paid" : "Pending",
-    });
-
-    fetchData();
+  // FIXED: only local state update (fast + reliable)
+  const handlePaymentMode = (id, mode) => {
+    setData((prev) =>
+      prev.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              paymentMode: mode,
+              paymentStatus:
+                mode === "Cash" || mode === "GPay" ? "Paid" : "Pending",
+            }
+          : item
+      )
+    );
   };
 
+  // FIXED: use latest selected payment value
   const handleDeliver = async (item) => {
-    const mode = item.paymentMode || "Later";
+    const currentItem = data.find((row) => row.id === item.id);
+
+    const mode = currentItem?.paymentMode || "Later";
 
     await updateDoc(doc(db, "orders", item.id), {
       status: "Delivered",
@@ -157,7 +167,7 @@ function Dashboard({ user, isAdmin }) {
       paymentStatus: mode === "Cash" || mode === "GPay" ? "Paid" : "Pending",
     });
 
-    await fetchData(); // instant remove from staff page
+    fetchData();
   };
 
   const markPaid = async (item) => {
@@ -260,7 +270,6 @@ function Dashboard({ user, isAdmin }) {
       )}
 
       {isAdmin && <h2>💰 Grand Total: ₹ {grandTotal}</h2>}
-
       {isAdmin && <h3>🧾 Pending Payments: ₹ {pendingTotal}</h3>}
 
       {isAdmin && (
@@ -368,7 +377,9 @@ function Dashboard({ user, isAdmin }) {
                   <>
                     <select
                       value={item.paymentMode || ""}
-                      onChange={(e) => handlePaymentMode(item, e.target.value)}
+                      onChange={(e) =>
+                        handlePaymentMode(item.id, e.target.value)
+                      }
                     >
                       <option value="">Select</option>
                       <option value="Cash">Cash</option>
