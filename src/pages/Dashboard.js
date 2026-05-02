@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { db, auth } from "../firebase";
 import {
   collection,
@@ -27,16 +27,14 @@ function Dashboard({ user, isAdmin }) {
     amount: "",
   });
 
-  const ordersRef = collection(db, "orders");
-
   const getTime = (val) => {
     if (!val) return 0;
     if (val.seconds) return val.seconds * 1000;
     return new Date(val).getTime();
   };
 
-  const fetchData = async () => {
-    const snapshot = await getDocs(ordersRef);
+  const fetchData = useCallback(async () => {
+    const snapshot = await getDocs(collection(db, "orders"));
 
     const list = snapshot.docs.map((item) => ({
       id: item.id,
@@ -46,9 +44,9 @@ function Dashboard({ user, isAdmin }) {
     list.sort((a, b) => getTime(b.createdAt) - getTime(a.createdAt));
 
     setData(list);
-  };
+  }, []);
 
-  const fetchStock = async () => {
+  const fetchStock = useCallback(async () => {
     const snapshot = await getDocs(collection(db, "stock"));
 
     const list = snapshot.docs.map((item) => ({
@@ -57,12 +55,12 @@ function Dashboard({ user, isAdmin }) {
     }));
 
     setStockList(list);
-  };
+  }, []);
 
   useEffect(() => {
     fetchData();
     fetchStock();
-  }, []);
+  }, [fetchData, fetchStock]);
 
   const handleLogout = async () => {
     await signOut(auth);
@@ -75,22 +73,7 @@ function Dashboard({ user, isAdmin }) {
     });
   };
 
-  const handleAdd = async () => {
-    if (!form.name || !form.mobile) {
-      alert("Name & Mobile required");
-      return;
-    }
-
-    const today = new Date().toLocaleDateString("en-CA");
-
-    await addDoc(ordersRef, {
-      ...form,
-      status: "Pending",
-      payment: "",
-      date: today,
-      createdAt: new Date(),
-    });
-
+  const clearForm = () => {
     setForm({
       name: "",
       mobile: "",
@@ -99,7 +82,25 @@ function Dashboard({ user, isAdmin }) {
       address: "",
       amount: "",
     });
+  };
 
+  const handleAdd = async () => {
+    if (!form.name || !form.mobile) {
+      alert("Name & Mobile required");
+      return;
+    }
+
+    const today = new Date().toLocaleDateString("en-CA");
+
+    await addDoc(collection(db, "orders"), {
+      ...form,
+      status: "Pending",
+      payment: "",
+      date: today,
+      createdAt: new Date(),
+    });
+
+    clearForm();
     fetchData();
   };
 
@@ -120,16 +121,7 @@ function Dashboard({ user, isAdmin }) {
     await updateDoc(doc(db, "orders", editId), form);
 
     setEditId(null);
-
-    setForm({
-      name: "",
-      mobile: "",
-      weight: "",
-      item: "",
-      address: "",
-      amount: "",
-    });
-
+    clearForm();
     fetchData();
   };
 
@@ -137,7 +129,6 @@ function Dashboard({ user, isAdmin }) {
     if (!window.confirm("Delete this order?")) return;
 
     await deleteDoc(doc(db, "orders", id));
-
     fetchData();
   };
 
@@ -173,7 +164,6 @@ function Dashboard({ user, isAdmin }) {
         .join("\n");
 
     const link = document.createElement("a");
-
     link.href = encodeURI(csv);
     link.download = `orders_${new Date().toISOString().slice(0, 10)}.csv`;
 
