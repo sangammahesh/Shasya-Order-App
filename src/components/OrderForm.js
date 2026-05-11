@@ -1,4 +1,11 @@
-function OrderForm({ form, handleChange, handleAdd, handleUpdate, editId }) {
+function OrderForm({
+  form,
+  handleChange,
+  handleAdd,
+  handleUpdate,
+  editId,
+  staffList,
+}) {
   return (
     <div style={{ marginTop: "20px" }}>
       <input
@@ -35,6 +42,17 @@ function OrderForm({ form, handleChange, handleAdd, handleUpdate, editId }) {
         value={form.amount}
         onChange={handleChange}
       />
+
+      {/* STAFF SELECT */}
+      <select name="assignedTo" value={form.assignedTo} onChange={handleChange}>
+        <option value="">Assign Staff</option>
+
+        {staffList.map((staff) => (
+          <option key={staff.id} value={staff.email}>
+            {staff.name}
+          </option>
+        ))}
+      </select>
 
       {editId ? (
         <button onClick={handleUpdate}>Update Order</button>
